@@ -1,9 +1,13 @@
 #include "ssd1305.h"
 #include "ssd1305_hal.h"
 #include "dashboard.h"
+#include "config_page.h"
 #include <SDL.h>
 #include <math.h>
 #include <stdbool.h>
+#include <time.h>
+
+typedef enum { PAGE_RACE, PAGE_CONFIG } page_t;
 
 #define TARGET_FPS   30
 #define FRAME_MS     (1000 / TARGET_FPS)
@@ -76,6 +80,22 @@ static void sim_telemetry(telemetry_t *t, uint32_t tick_ms)
     t->position = (uint8_t)base_pos;
 }
 
+static void update_config_live(controller_config_t *cfg, uint32_t tick_ms)
+{
+    double s = tick_ms / 1000.0;
+
+    /* battery drains slowly (spring_rate and strength are user-controlled) */
+    int bat = 100 - (int)(s / 6.0);
+    if (bat < 5) bat = 5;
+    cfg->battery_pct = (uint8_t)bat;
+
+    time_t now = time(NULL);
+    struct tm *lt = localtime(&now);
+    cfg->clock_hour = (uint8_t)lt->tm_hour;
+    cfg->clock_min  = (uint8_t)lt->tm_min;
+    cfg->clock_sec  = (uint8_t)lt->tm_sec;
+}
+
 int main(int argc, char *argv[])
 {
     (void)argc; (void)argv;
@@ -83,6 +103,12 @@ int main(int argc, char *argv[])
     ssd1305_init();
 
     telemetry_t telem = {0};
+    controller_config_t config = {
+        .spring_rate = 75,
+        .strength = 90,
+        .selected = CFG_SEL_SPRING
+    };
+    page_t page = PAGE_RACE;
     bool running = true;
     uint32_t start = SDL_GetTicks();
 
@@ -93,13 +119,33 @@ int main(int argc, char *argv[])
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_QUIT)
                 running = false;
-            if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE)
-                running = false;
+            if (ev.type == SDL_KEYDOWN) {
+                SDL_Keycode k = ev.key.keysym.sym;
+                if (k == SDLK_ESCAPE)
+                    running = false;
+                else if (k == SDLK_TAB)
+                    page = (page == PAGE_RACE) ? PAGE_CONFIG : PAGE_RACE;
+                else if (page == PAGE_CONFIG) {
+                    if (k == SDLK_UP)    config_page_nav(&config, -1);
+                    if (k == SDLK_DOWN)  config_page_nav(&config,  1);
+                    if (k == SDLK_LEFT)  config_page_adjust(&config, -5);
+                    if (k == SDLK_RIGHT) config_page_adjust(&config,  5);
+                }
+            }
         }
 
         uint32_t elapsed = SDL_GetTicks() - start;
-        sim_telemetry(&telem, elapsed);
-        dashboard_render(&telem);
+
+        switch (page) {
+        case PAGE_RACE:
+            sim_telemetry(&telem, elapsed);
+            dashboard_render(&telem);
+            break;
+        case PAGE_CONFIG:
+            update_config_live(&config, elapsed);
+            config_page_render(&config);
+            break;
+        }
 
         uint32_t frame_time = SDL_GetTicks() - frame_start;
         if (frame_time < FRAME_MS)

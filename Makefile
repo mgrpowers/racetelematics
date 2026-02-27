@@ -3,7 +3,7 @@ CFLAGS  = -Wall -Wextra -std=c99 -Iinclude $(shell sdl2-config --cflags)
 LDFLAGS = $(shell sdl2-config --libs) -lm
 
 SRC     = src/main.c src/ssd1305.c src/ssd1305_hal_sdl.c src/display.c \
-          src/font5x7.c src/dashboard.c src/telemetry_rx.c
+          src/font5x7.c src/dashboard.c src/config_page.c src/telemetry_rx.c
 OBJ     = $(SRC:.c=.o)
 BIN     = racecontroller
 
