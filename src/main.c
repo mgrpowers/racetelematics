@@ -2,12 +2,16 @@
 #include "ssd1305_hal.h"
 #include "dashboard.h"
 #include "config_page.h"
+#include "dirt_rally_rx.h"
 #include <SDL.h>
 #include <math.h>
 #include <stdbool.h>
+#include <string.h>
+#include <stdio.h>
 #include <time.h>
 
 typedef enum { PAGE_RACE, PAGE_CONFIG } page_t;
+typedef enum { SRC_SIM, SRC_DIRT } telem_src_t;
 
 #define TARGET_FPS   30
 #define FRAME_MS     (1000 / TARGET_FPS)
@@ -98,9 +102,23 @@ static void update_config_live(controller_config_t *cfg, uint32_t tick_ms)
 
 int main(int argc, char *argv[])
 {
-    (void)argc; (void)argv;
+    telem_src_t source = SRC_SIM;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--dirt") == 0)
+            source = SRC_DIRT;
+    }
 
     ssd1305_init();
+
+    if (source == SRC_DIRT) {
+        if (dirt_rx_init(DIRT_RALLY_PORT) < 0) {
+            fprintf(stderr, "Failed to bind UDP port %d\n", DIRT_RALLY_PORT);
+            return 1;
+        }
+        printf("Listening for Dirt Rally telemetry on UDP %d\n",
+               DIRT_RALLY_PORT);
+    }
 
     telemetry_t telem = {0};
     controller_config_t config = {
@@ -138,7 +156,10 @@ int main(int argc, char *argv[])
 
         switch (page) {
         case PAGE_RACE:
-            sim_telemetry(&telem, elapsed);
+            if (source == SRC_DIRT)
+                dirt_rx_poll(&telem);
+            else
+                sim_telemetry(&telem, elapsed);
             dashboard_render(&telem);
             break;
         case PAGE_CONFIG:
@@ -152,6 +173,8 @@ int main(int argc, char *argv[])
             SDL_Delay(FRAME_MS - frame_time);
     }
 
+    if (source == SRC_DIRT)
+        dirt_rx_close();
     hal_display_destroy();
     return 0;
 }
