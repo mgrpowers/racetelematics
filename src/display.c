@@ -108,6 +108,25 @@ void display_draw_hbar(int16_t x, int16_t y, int16_t w, int16_t h,
         display_fill_rect(x + 1, y + 1, fill_w, h - 2, color);
 }
 
+void display_draw_segbar(int16_t x, int16_t y, int16_t w, int16_t h,
+                         int segs, uint8_t pct, color_t color)
+{
+    if (segs < 1) segs = 1;
+    int gap = 1;
+    int seg_w = (w - gap * (segs - 1)) / segs;
+    if (seg_w < 2) { seg_w = 2; gap = 1; }
+
+    int filled = (int)segs * clamp(pct, 0, 100) / 100;
+
+    for (int i = 0; i < segs; i++) {
+        int sx = x + i * (seg_w + gap);
+        if (i < filled)
+            display_fill_rect(sx, y, seg_w, h, color);
+        else
+            display_draw_rect(sx, y, seg_w, h, color);
+    }
+}
+
 void display_draw_ramp(int16_t x, int16_t y, int16_t w, int16_t h,
                        int bars, uint8_t pct, color_t color)
 {

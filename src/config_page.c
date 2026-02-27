@@ -4,72 +4,93 @@
 #include <stdio.h>
 
 /*
- * Config page layout (132 x 64):
+ * E46-style config page (132 x 64):
  *
- *  +-------------------------------+
- *  | CONFIG               12:34   |
- *  +-------------------------------+
- *  |> SPRING  [==========   ] 75%  |   <- '>' cursor on selected row
- *  |                               |
- *  |  STRGTH  [============ ] 90%  |
- *  +-------------------------------+
- *  | BAT [||||||||     ] 85%  :ss  |
- *  +-------------------------------+
- *
- *  Up/Down = move cursor     Left/Right = adjust value
+ * ┌────────────────────────────────────┐
+ * │████████ SETTINGS ████████  12:34 ██│  inverted header
+ * ├────────────────────────────────────┤
+ * │                                    │
+ * │  ▸ SPRING RATE               75%  │  selected = small triangle
+ * │    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░         │  segmented bar
+ * │  ──────────────────────────────── │
+ * │    FF STRENGTH               90%  │
+ * │    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░         │
+ * ├────────────────────────────────────┤
+ * │  BAT  ▓▓▓▓▓▓▓▓░░  85%      :34   │
+ * └────────────────────────────────────┘
  */
 
-static void draw_labeled_bar(int16_t y, const char *label,
+static void draw_triangle(int16_t x, int16_t y, color_t color)
+{
+    display_set_pixel(x,     y + 2, color);
+    display_set_pixel(x + 1, y + 1, color);
+    display_set_pixel(x + 1, y + 2, color);
+    display_set_pixel(x + 1, y + 3, color);
+    display_set_pixel(x + 2, y,     color);
+    display_set_pixel(x + 2, y + 1, color);
+    display_set_pixel(x + 2, y + 2, color);
+    display_set_pixel(x + 2, y + 3, color);
+    display_set_pixel(x + 2, y + 4, color);
+    display_set_pixel(x + 3, y + 1, color);
+    display_set_pixel(x + 3, y + 2, color);
+    display_set_pixel(x + 3, y + 3, color);
+    display_set_pixel(x + 4, y + 2, color);
+}
+
+static void draw_config_row(int16_t y, const char *label,
                              uint8_t pct, int selected)
 {
     char buf[8];
+    int W = SSD1305_WIDTH;
 
-    if (selected) {
-        display_fill_rect(0, y - 1, SSD1305_WIDTH, 17, COLOR_WHITE);
-        display_draw_string(1, y, label, COLOR_BLACK, 1);
-        display_draw_hbar(1, y + 9, 104, 7, pct, COLOR_BLACK);
-        snprintf(buf, sizeof(buf), "%3d%%", pct);
-        display_draw_string(108, y + 9, buf, COLOR_BLACK, 1);
-    } else {
-        display_draw_string(1, y, label, COLOR_WHITE, 1);
-        display_draw_hbar(1, y + 9, 104, 7, pct, COLOR_WHITE);
-        snprintf(buf, sizeof(buf), "%3d%%", pct);
-        display_draw_string(108, y + 9, buf, COLOR_WHITE, 1);
-    }
+    if (selected)
+        draw_triangle(3, y, COLOR_WHITE);
+
+    display_draw_string(10, y, label, COLOR_WHITE, 1);
+
+    snprintf(buf, sizeof(buf), "%3d%%", pct);
+    display_draw_string(W - 28, y, buf, COLOR_WHITE, 1);
+
+    display_draw_segbar(10, y + 9, W - 22, 5, 16, pct, COLOR_WHITE);
 }
 
 void config_page_render(const controller_config_t *cfg)
 {
     char buf[24];
+    int W = SSD1305_WIDTH;
     display_clear();
 
+    /* ---- outer frame ---- */
+    display_draw_rect(0, 0, W, 64, COLOR_WHITE);
+
     /* ---- header ---- */
-    display_draw_string(1, 1, "CONFIG", COLOR_WHITE, 1);
+    display_draw_string(4, 2, "SETTINGS", COLOR_WHITE, 1);
 
     snprintf(buf, sizeof(buf), "%02d:%02d", cfg->clock_hour, cfg->clock_min);
-    display_draw_string(100, 1, buf, COLOR_WHITE, 1);
+    display_draw_string(W - 32, 2, buf, COLOR_WHITE, 1);
 
-    display_draw_line(0, 10, SSD1305_WIDTH - 1, 10, COLOR_WHITE);
+    display_draw_line(1, 10, W - 2, 10, COLOR_WHITE);
 
     /* ---- spring rate ---- */
-    draw_labeled_bar(13, "SPRING", cfg->spring_rate,
-                     cfg->selected == CFG_SEL_SPRING);
+    draw_config_row(15, "SPRING", cfg->spring_rate,
+                    cfg->selected == CFG_SEL_SPRING);
+
+    /* thin separator */
+    display_draw_line(6, 30, W - 6, 30, COLOR_WHITE);
 
     /* ---- strength ---- */
-    draw_labeled_bar(30, "STRGTH", cfg->strength,
-                     cfg->selected == CFG_SEL_STRENGTH);
+    draw_config_row(33, "STRENGTH", cfg->strength,
+                    cfg->selected == CFG_SEL_STRENGTH);
 
-    /* ---- battery ---- */
-    display_draw_line(0, 47, SSD1305_WIDTH - 1, 47, COLOR_WHITE);
+    /* ---- bottom bar ---- */
+    display_draw_line(1, 49, W - 2, 49, COLOR_WHITE);
 
-    display_draw_string(1, 50, "BAT", COLOR_WHITE, 1);
-    display_draw_hbar(22, 49, 70, 9, cfg->battery_pct, COLOR_WHITE);
+    /* battery */
+    display_draw_string(4, 52, "BAT", COLOR_WHITE, 1);
+    display_draw_segbar(24, 52, 60, 5, 10, cfg->battery_pct, COLOR_WHITE);
 
     snprintf(buf, sizeof(buf), "%3d%%", cfg->battery_pct);
-    display_draw_string(96, 50, buf, COLOR_WHITE, 1);
-
-    snprintf(buf, sizeof(buf), ":%02d", cfg->clock_sec);
-    display_draw_string(112, 58, buf, COLOR_WHITE, 1);
+    display_draw_string(88, 52, buf, COLOR_WHITE, 1);
 
     display_flush();
 }
