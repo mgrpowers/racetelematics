@@ -14,9 +14,16 @@ SIM_CFLAGS = -Wall -Wextra -std=c99 -Iinclude
 SIM_SRC    = sim/telemetry_sim.c
 SIM_BIN    = telemetry_sim
 
+# Racepad bridge (standalone, no SDL dependency)
+BRIDGE_CC     = gcc
+BRIDGE_CFLAGS = -Wall -Wextra -std=c99 -Iinclude
+BRIDGE_SRC    = src/racepad_bridge.c
+BRIDGE_BIN    = racepad_bridge
+
 all: $(BIN)
 
 sim: $(SIM_BIN)
+bridge: $(BRIDGE_BIN)
 
 $(BIN): $(OBJ)
 	$(CC) -o $@ $^ $(LDFLAGS)
@@ -24,10 +31,13 @@ $(BIN): $(OBJ)
 $(SIM_BIN): $(SIM_SRC)
 	$(SIM_CC) $(SIM_CFLAGS) -o $@ $< -lm
 
+$(BRIDGE_BIN): $(BRIDGE_SRC)
+	$(BRIDGE_CC) $(BRIDGE_CFLAGS) -o $@ $< -lm
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f $(OBJ) $(BIN) $(SIM_BIN)
+	rm -f $(OBJ) $(BIN) $(SIM_BIN) $(BRIDGE_BIN)
 
-.PHONY: all sim clean
+.PHONY: all sim bridge clean
