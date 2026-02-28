@@ -26,6 +26,33 @@ Options:
 - `--hz <n>` serial update rate cap (default `20`)
 - `--dry-run` print outbound frames without opening serial
 
+## Windows Build (MSYS2 / pacman)
+
+Use MSYS2 on Windows to get `pacman`, GCC, `make`, and SDL2.
+
+1. Install MSYS2:
+   - https://www.msys2.org/
+2. Open **MSYS2 UCRT64** terminal.
+3. Run first-time updates:
+   - `pacman -Syu`
+   - close/reopen terminal if prompted, then run `pacman -Syu` again.
+4. Install toolchain and SDL2:
+   - `pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make mingw-w64-ucrt-x86_64-SDL2`
+5. Build from repo root:
+   - `make`
+   - `make pico`
+   - `make sim`
+
+Generated binaries:
+
+- `racecontroller.exe`
+- `pico_scroll_bridge.exe`
+- `telemetry_sim.exe`
+
+Windows serial example:
+
+- `./pico_scroll_bridge.exe --serial COM7 --hz 20 -v`
+
 ## Pico Receiver Script
 
 Added script:
@@ -114,3 +141,9 @@ This avoids dense text rendering and keeps motion legible at speed.
    - `RX: ...` telemetry
    - `TX: T,...` outbound frame lines
 5. Confirm Pico receives line stream and updates LEDs.
+
+### Platform serial notes
+
+- macOS: prefer `/dev/cu.usbmodemXXXX` for host serial clients.
+- Linux: usually `/dev/ttyACM0` or `/dev/ttyUSB0`.
+- Windows: use `COMx` (for example `COM7`).
