@@ -1,11 +1,23 @@
 #include "dirt_rally_rx.h"
 
 #include <string.h>
+#include <math.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+typedef SOCKET socket_t;
+#define CLOSESOCK closesocket
+#define INVALID_SOCK INVALID_SOCKET
+#else
 #include <unistd.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <math.h>
+typedef int socket_t;
+#define CLOSESOCK close
+#define INVALID_SOCK (-1)
+#endif
 
 /*
  * Dirt Rally / Dirt Rally 2.0 UDP packet (extradata=3):
@@ -42,15 +54,44 @@ enum {
     DR_MAX_RPM_DIV10 = 63,
 };
 
-static int rx_sock = -1;
+static socket_t rx_sock = INVALID_SOCK;
+
+static int net_init(void)
+{
+#ifdef _WIN32
+    static int started = 0;
+    if (!started) {
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return -1;
+        started = 1;
+    }
+#endif
+    return 0;
+}
+
+static int set_nonblocking(socket_t s)
+{
+#ifdef _WIN32
+    u_long mode = 1;
+    return ioctlsocket(s, FIONBIO, &mode);
+#else
+    int flags = fcntl(s, F_GETFL, 0);
+    return fcntl(s, F_SETFL, flags | O_NONBLOCK);
+#endif
+}
 
 int dirt_rx_init(int port)
 {
-    rx_sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (rx_sock < 0) return -1;
+    if (net_init() != 0) return -1;
 
-    int flags = fcntl(rx_sock, F_GETFL, 0);
-    fcntl(rx_sock, F_SETFL, flags | O_NONBLOCK);
+    rx_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (rx_sock == INVALID_SOCK) return -1;
+
+    if (set_nonblocking(rx_sock) != 0) {
+        CLOSESOCK(rx_sock);
+        rx_sock = INVALID_SOCK;
+        return -1;
+    }
 
     int reuse = 1;
     setsockopt(rx_sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
@@ -62,8 +103,8 @@ int dirt_rx_init(int port)
     addr.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(rx_sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        close(rx_sock);
-        rx_sock = -1;
+        CLOSESOCK(rx_sock);
+        rx_sock = INVALID_SOCK;
         return -1;
     }
     return 0;
@@ -115,8 +156,8 @@ int dirt_rx_poll(telemetry_t *out)
 
 void dirt_rx_close(void)
 {
-    if (rx_sock >= 0) {
-        close(rx_sock);
-        rx_sock = -1;
+    if (rx_sock != INVALID_SOCK) {
+        CLOSESOCK(rx_sock);
+        rx_sock = INVALID_SOCK;
     }
 }

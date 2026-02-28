@@ -2,21 +2,62 @@
 #include "telemetry_proto.h"
 
 #include <string.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+typedef SOCKET socket_t;
+#define CLOSESOCK closesocket
+#define INVALID_SOCK INVALID_SOCKET
+#else
 #include <unistd.h>
 #include <fcntl.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+typedef int socket_t;
+#define CLOSESOCK close
+#define INVALID_SOCK (-1)
+#endif
 
-static int rx_sock = -1;
+static socket_t rx_sock = INVALID_SOCK;
+
+static int net_init(void)
+{
+#ifdef _WIN32
+    static int started = 0;
+    if (!started) {
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return -1;
+        started = 1;
+    }
+#endif
+    return 0;
+}
+
+static int set_nonblocking(socket_t s)
+{
+#ifdef _WIN32
+    u_long mode = 1;
+    return ioctlsocket(s, FIONBIO, &mode);
+#else
+    int flags = fcntl(s, F_GETFL, 0);
+    return fcntl(s, F_SETFL, flags | O_NONBLOCK);
+#endif
+}
 
 int telem_rx_init(int port)
 {
+    if (net_init() != 0) return -1;
+
     rx_sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (rx_sock < 0) return -1;
+    if (rx_sock == INVALID_SOCK) return -1;
 
     /* non-blocking so the render loop never stalls */
-    int flags = fcntl(rx_sock, F_GETFL, 0);
-    fcntl(rx_sock, F_SETFL, flags | O_NONBLOCK);
+    if (set_nonblocking(rx_sock) != 0) {
+        CLOSESOCK(rx_sock);
+        rx_sock = INVALID_SOCK;
+        return -1;
+    }
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -25,8 +66,8 @@ int telem_rx_init(int port)
     addr.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(rx_sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        close(rx_sock);
-        rx_sock = -1;
+        CLOSESOCK(rx_sock);
+        rx_sock = INVALID_SOCK;
         return -1;
     }
     return 0;
@@ -59,8 +100,8 @@ int telem_rx_poll(telemetry_t *out)
 
 void telem_rx_close(void)
 {
-    if (rx_sock >= 0) {
-        close(rx_sock);
-        rx_sock = -1;
+    if (rx_sock != INVALID_SOCK) {
+        CLOSESOCK(rx_sock);
+        rx_sock = INVALID_SOCK;
     }
 }

@@ -1,12 +1,24 @@
 #include "assetto_rx.h"
 
-#include <arpa/inet.h>
-#include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+typedef SOCKET socket_t;
+#define CLOSESOCK closesocket
+#define INVALID_SOCK INVALID_SOCKET
+#else
+#include <arpa/inet.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
+typedef int socket_t;
+#define CLOSESOCK close
+#define INVALID_SOCK (-1)
+#endif
 
 enum {
     AC_OP_HANDSHAKE = 0,
@@ -19,10 +31,34 @@ typedef struct {
     int32_t operation_id;
 } ac_handshake_t;
 
-static int rx_sock = -1;
+static socket_t rx_sock = INVALID_SOCK;
 static struct sockaddr_in ac_addr;
 static int handshake_sent = 0;
 static int subscribed = 0;
+
+static int net_init(void)
+{
+#ifdef _WIN32
+    static int started = 0;
+    if (!started) {
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return -1;
+        started = 1;
+    }
+#endif
+    return 0;
+}
+
+static int set_nonblocking(socket_t s)
+{
+#ifdef _WIN32
+    u_long mode = 1;
+    return ioctlsocket(s, FIONBIO, &mode);
+#else
+    int flags = fcntl(s, F_GETFL, 0);
+    return fcntl(s, F_SETFL, flags | O_NONBLOCK);
+#endif
+}
 
 static int send_handshake(int op)
 {
@@ -54,18 +90,23 @@ static float read_f32_le(const uint8_t *p)
 
 int assetto_rx_init(const char *host, int port)
 {
-    rx_sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (rx_sock < 0) return -1;
+    if (net_init() != 0) return -1;
 
-    int flags = fcntl(rx_sock, F_GETFL, 0);
-    fcntl(rx_sock, F_SETFL, flags | O_NONBLOCK);
+    rx_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (rx_sock == INVALID_SOCK) return -1;
+
+    if (set_nonblocking(rx_sock) != 0) {
+        CLOSESOCK(rx_sock);
+        rx_sock = INVALID_SOCK;
+        return -1;
+    }
 
     memset(&ac_addr, 0, sizeof(ac_addr));
     ac_addr.sin_family = AF_INET;
     ac_addr.sin_port = htons((uint16_t)port);
     if (inet_pton(AF_INET, host, &ac_addr.sin_addr) != 1) {
-        close(rx_sock);
-        rx_sock = -1;
+        CLOSESOCK(rx_sock);
+        rx_sock = INVALID_SOCK;
         return -1;
     }
 
@@ -149,9 +190,9 @@ int assetto_rx_poll(telemetry_t *out)
 
 void assetto_rx_close(void)
 {
-    if (rx_sock >= 0) {
-        close(rx_sock);
-        rx_sock = -1;
+    if (rx_sock != INVALID_SOCK) {
+        CLOSESOCK(rx_sock);
+        rx_sock = INVALID_SOCK;
     }
     handshake_sent = 0;
     subscribed = 0;

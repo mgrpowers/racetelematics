@@ -1,6 +1,10 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -std=c99 -Iinclude $(shell sdl2-config --cflags)
-LDFLAGS = $(shell sdl2-config --libs) -lm
+SOCKET_LIBS =
+ifeq ($(OS),Windows_NT)
+SOCKET_LIBS = -lws2_32
+endif
+LDFLAGS = $(shell sdl2-config --libs) -lm $(SOCKET_LIBS)
 
 SRC     = src/main.c src/ssd1305.c src/ssd1305_hal_sdl.c src/display.c \
           src/font5x7.c src/dashboard.c src/config_page.c src/telemetry_rx.c \
@@ -35,13 +39,13 @@ $(BIN): $(OBJ)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 $(SIM_BIN): $(SIM_SRC)
-	$(SIM_CC) $(SIM_CFLAGS) -o $@ $< -lm
+	$(SIM_CC) $(SIM_CFLAGS) -o $@ $< -lm $(SOCKET_LIBS)
 
 $(BRIDGE_BIN): $(BRIDGE_SRC)
-	$(BRIDGE_CC) $(BRIDGE_CFLAGS) -o $@ $< -lm
+	$(BRIDGE_CC) $(BRIDGE_CFLAGS) -o $@ $< -lm $(SOCKET_LIBS)
 
 $(PICO_BIN): $(PICO_SRC)
-	$(PICO_CC) $(PICO_CFLAGS) -o $@ $< -lm
+	$(PICO_CC) $(PICO_CFLAGS) -o $@ $< -lm $(SOCKET_LIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
