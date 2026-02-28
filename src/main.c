@@ -3,15 +3,17 @@
 #include "dashboard.h"
 #include "config_page.h"
 #include "dirt_rally_rx.h"
+#include "assetto_rx.h"
 #include <SDL.h>
 #include <math.h>
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 
 typedef enum { PAGE_RACE, PAGE_CONFIG } page_t;
-typedef enum { SRC_SIM, SRC_DIRT } telem_src_t;
+typedef enum { SRC_SIM, SRC_DIRT, SRC_ASSETTO } telem_src_t;
 
 #define TARGET_FPS   30
 #define FRAME_MS     (1000 / TARGET_FPS)
@@ -103,10 +105,18 @@ static void update_config_live(controller_config_t *cfg, uint32_t tick_ms)
 int main(int argc, char *argv[])
 {
     telem_src_t source = SRC_SIM;
+    const char *assetto_host = "127.0.0.1";
+    int assetto_port = ASSETTO_PORT;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--dirt") == 0)
             source = SRC_DIRT;
+        else if (strcmp(argv[i], "--assetto") == 0)
+            source = SRC_ASSETTO;
+        else if (strcmp(argv[i], "--assetto-host") == 0 && i + 1 < argc)
+            assetto_host = argv[++i];
+        else if (strcmp(argv[i], "--assetto-port") == 0 && i + 1 < argc)
+            assetto_port = atoi(argv[++i]);
     }
 
     ssd1305_init();
@@ -118,6 +128,14 @@ int main(int argc, char *argv[])
         }
         printf("Listening for Dirt Rally telemetry on UDP %d\n",
                DIRT_RALLY_PORT);
+    } else if (source == SRC_ASSETTO) {
+        if (assetto_rx_init(assetto_host, assetto_port) < 0) {
+            fprintf(stderr, "Failed to init Assetto receiver %s:%d\n",
+                    assetto_host, assetto_port);
+            return 1;
+        }
+        printf("Listening for Assetto Corsa telemetry via UDP %s:%d\n",
+               assetto_host, assetto_port);
     }
 
     telemetry_t telem = {0};
@@ -158,6 +176,8 @@ int main(int argc, char *argv[])
         case PAGE_RACE:
             if (source == SRC_DIRT)
                 dirt_rx_poll(&telem);
+            else if (source == SRC_ASSETTO)
+                assetto_rx_poll(&telem);
             else
                 sim_telemetry(&telem, elapsed);
             dashboard_render(&telem);
@@ -175,6 +195,8 @@ int main(int argc, char *argv[])
 
     if (source == SRC_DIRT)
         dirt_rx_close();
+    else if (source == SRC_ASSETTO)
+        assetto_rx_close();
     hal_display_destroy();
     return 0;
 }

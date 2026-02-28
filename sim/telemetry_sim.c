@@ -116,12 +116,32 @@ typedef struct {
     int    tc_on;
     int    on_kerb;
     int    lap;
+    int    shifting;
+    int    shift_to_gear;
+    double shift_t;
+    double shift_dt;
+    double shift_rpm_from;
+    double shift_rpm_to;
 } car_t;
 
 static double speed_to_rpm(double v, int gear)
 {
     double wheel_rps = v / (2.0 * M_PI * TIRE_RADIUS);
     return wheel_rps * gear_ratio[gear] * FINAL_DRIVE * 60.0;
+}
+
+static void start_shift(car_t *c, int to_gear, double shift_time)
+{
+    if (to_gear < 0) to_gear = 0;
+    if (to_gear >= NUM_GEARS) to_gear = NUM_GEARS - 1;
+    if (to_gear == c->gear) return;
+
+    c->shifting = 1;
+    c->shift_to_gear = to_gear;
+    c->shift_t = 0.0;
+    c->shift_dt = shift_time;
+    c->shift_rpm_from = c->rpm;
+    c->shift_rpm_to = speed_to_rpm(c->v, to_gear);
 }
 
 /*
@@ -163,7 +183,24 @@ static void sim_step(car_t *c, double dt)
 
     int braking = (c->v > v_limit + 0.5) || should_brake(c, &v_target);
 
-    if (braking) {
+    if (c->shifting) {
+        /* During shifts, briefly cut torque and blend RPM to target gear. */
+        c->throttle = 0.0;
+        c->brake = 0.0;
+        c->v -= 0.45 * dt;
+        if (c->v < 5.0) c->v = 5.0;
+
+        c->shift_t += dt;
+        double a = c->shift_t / c->shift_dt;
+        if (a > 1.0) a = 1.0;
+        c->rpm = c->shift_rpm_from + (c->shift_rpm_to - c->shift_rpm_from) * a;
+
+        if (c->shift_t >= c->shift_dt) {
+            c->gear = c->shift_to_gear;
+            c->shifting = 0;
+            c->rpm = speed_to_rpm(c->v, c->gear);
+        }
+    } else if (braking) {
         if (c->v > v_limit + 0.5)
             v_target = v_limit;
 
@@ -199,14 +236,16 @@ static void sim_step(car_t *c, double dt)
     if (c->v < 5.0) c->v = 5.0;
 
     /* ── gearbox ── */
-    c->rpm = speed_to_rpm(c->v, c->gear);
+    if (!c->shifting) {
+        c->rpm = speed_to_rpm(c->v, c->gear);
 
-    if (c->rpm >= RPM_SHIFT_VAL && c->gear < NUM_GEARS - 1) {
-        c->gear++;
-        c->rpm = speed_to_rpm(c->v, c->gear);
-    } else if (c->rpm < RPM_DOWNSHIFT && c->gear > 0) {
-        c->gear--;
-        c->rpm = speed_to_rpm(c->v, c->gear);
+        if (c->rpm >= RPM_SHIFT_VAL && c->gear < NUM_GEARS - 1) {
+            /* Upshift: quick ignition cut and RPM drop. */
+            start_shift(c, c->gear + 1, 0.090);
+        } else if (c->rpm < (RPM_DOWNSHIFT - 300) && c->gear > 0) {
+            /* Downshift: slightly longer transition. */
+            start_shift(c, c->gear - 1, 0.120);
+        }
     }
     if (c->rpm > RPM_MAX_VAL) c->rpm = RPM_MAX_VAL;
     if (c->rpm < RPM_IDLE)    c->rpm = RPM_IDLE;
